@@ -1,0 +1,232 @@
+:root {
+  --fg: #c8d4c0;
+  --dim: #7d8a76;
+  --blood: #e8353a;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  color: var(--fg);
+  font-family: 'VT323', 'Courier New', monospace;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Small mirrored preview so the player can keep their face in frame. */
+#webcam {
+  display: none;
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 3;
+  width: min(160px, 30vw);
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  transform: scaleX(-1);
+  filter: grayscale(1) contrast(1.3) brightness(0.8);
+  border: 1px solid #2a2f27;
+  opacity: 0.7;
+}
+
+/* CRT: scanlines, curved-tube shading, a rolling VHS band. */
+.crt {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0, 0, 0, 0.28) 2px 3px);
+  box-shadow: inset 0 0 160px rgba(0, 0, 0, 0.9);
+  animation: crt-flicker 0.15s infinite;
+}
+.crt::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 120px;
+  background: linear-gradient(transparent, rgba(200, 220, 190, 0.035), transparent);
+  animation: roll 7s linear infinite;
+}
+@keyframes crt-flicker {
+  0% { opacity: 0.9; }
+  50% { opacity: 1; }
+  100% { opacity: 0.93; }
+}
+@keyframes roll {
+  from { transform: translateY(-120px); }
+  to { transform: translateY(100vh); }
+}
+
+/* Overlays: body[data-state] (set by game.js) picks which one shows. */
+.screen {
+  display: none;
+}
+body[data-state='menu'] #menu,
+body[data-state='playing'] #hud,
+body[data-state='gameover'] #gameover,
+body[data-state='victory'] #victory,
+body[data-state='playing'] #webcam {
+  display: flex;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2rem;
+  padding: 16px;
+  text-align: center;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.85));
+}
+
+h1 {
+  font-size: clamp(2.5rem, 9vw, 6rem);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 3px 0 rgba(232, 53, 58, 0.7), -3px 0 rgba(0, 180, 170, 0.35);
+  animation: jitter 3s steps(1) infinite;
+}
+@keyframes jitter {
+  0%, 92%, 100% { transform: none; }
+  93% { transform: translate(-4px, 1px) skewX(8deg); }
+  95% { transform: translate(3px, -2px); }
+  97% { transform: translate(-1px, 2px) skewX(-6deg); }
+}
+
+p {
+  max-width: 36rem;
+  font-size: clamp(1.2rem, 3vw, 1.6rem);
+  color: var(--dim);
+}
+.rules {
+  list-style: none;
+  padding: 0;
+  font-size: clamp(1.1rem, 2.6vw, 1.4rem);
+  line-height: 1.35;
+  color: var(--fg);
+}
+.rules li + li {
+  margin-top: 0.35em;
+}
+.fine {
+  font-size: 1.05rem;
+  opacity: 0.75;
+}
+#status:empty {
+  display: none;
+}
+#status.error {
+  color: var(--blood);
+}
+
+button {
+  font: inherit;
+  font-size: 1.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--fg);
+  padding: 0.35em 1.4em;
+  cursor: pointer;
+}
+button:hover,
+button:focus-visible {
+  background: var(--fg);
+  color: #000;
+  outline: none;
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: wait;
+}
+
+/* Let the jump scare play before the game-over card fades in. */
+#gameover {
+  background: radial-gradient(ellipse at center, rgba(40, 0, 0, 0.45), rgba(0, 0, 0, 0.9));
+  animation: fade-in 0.6s 1.4s both;
+}
+#gameover h1 {
+  color: var(--blood);
+}
+@keyframes fade-in {
+  from { opacity: 0; visibility: hidden; }
+}
+
+#hud {
+  position: fixed;
+  inset: 16px 16px auto;
+  z-index: 4;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  font-size: clamp(1.2rem, 3.5vw, 1.8rem);
+  pointer-events: none;
+  text-shadow: 0 0 6px rgba(200, 212, 192, 0.5);
+}
+.hud-right {
+  text-align: right;
+}
+#hud-ear,
+.strain {
+  font-size: 0.75em;
+  color: var(--dim);
+}
+.strain {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5em;
+}
+.strain-bar {
+  width: 7em;
+  height: 0.55em;
+  border: 1px solid var(--dim);
+}
+#hud-strain {
+  display: block;
+  height: 100%;
+  background: var(--fg);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+#hud-strain.danger {
+  background: var(--blood);
+}
+#hud-eyes.danger,
+.rec {
+  color: var(--blood);
+}
+.rec {
+  animation: rec 1s steps(1) infinite;
+}
+@keyframes rec {
+  50% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crt,
+  .crt::after,
+  h1,
+  .rec {
+    animation: none;
+  }
+}
