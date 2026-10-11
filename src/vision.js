@@ -1,14 +1,18 @@
-import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+import { FaceLandmarker, GestureRecognizer, FilesetResolver } from '@mediapipe/tasks-vision';
 
 // Keep the version in sync with the installed @mediapipe/tasks-vision.
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.0/wasm';
-const MODEL_URL =
+const FACE_MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+const GESTURE_MODEL_URL =
+  'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task';
 
 // Calibration knob: open eyes usually read 0.25–0.35. Raise it if blinks slip through.
 export const EAR_THRESHOLD = 0.2;
 // Calibration knob: how far the nose must swing off-center (fraction of face width) to count as a head turn.
 export const TURN_THRESHOLD = 0.12;
+// Calibration knob: minimum confidence for a hand gesture to count. Raise it if gestures fire on their own.
+const GESTURE_SCORE = 0.6;
 
 // Face-mesh indices [p1..p6] for EAR = (|p2-p6| + |p3-p5|) / (2 * |p1-p4|)
 const LEFT_EYE = [33, 160, 158, 133, 153, 144];
@@ -28,15 +32,17 @@ const CAMERA_ERRORS = {
 let video = null;
 let stream = null;
 let landmarker = null;
+let recognizer = null;
 let lastVideoTime = -1;
 let ear = null; // average EAR of both eyes, null when no face is visible
 let turn = 0; // nose offset from face center; positive = player turned toward the screen's left
+let gesture = null; // canned MediaPipe gesture name ('Open_Palm', 'Pointing_Up', ...) or null
 
 // Safe to call again after a failure: only the missing piece is retried.
 export async function initVision(videoEl) {
   video = videoEl;
   if (!stream) stream = await openCamera();
-  if (!landmarker) landmarker = await loadLandmarker();
+  if (!landmarker) [landmarker, recognizer] = await loadModels();
 }
 
 async function openCamera() {
@@ -56,28 +62,31 @@ async function openCamera() {
   s.getVideoTracks()[0].addEventListener('ended', () => {
     stream = null;
     ear = null;
+    gesture = null;
   });
   video.srcObject = s;
   await video.play();
   return s;
 }
 
-async function loadLandmarker() {
+async function loadModels() {
   try {
     const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
-    const options = (delegate) => ({
-      baseOptions: { modelAssetPath: MODEL_URL, delegate },
-      runningMode: 'VIDEO',
-      numFaces: 1,
-    });
-    try {
-      return await FaceLandmarker.createFromOptions(fileset, options('GPU'));
-    } catch {
-      return await FaceLandmarker.createFromOptions(fileset, options('CPU'));
-    }
+    const create = async (Task, model, extra) => {
+      const options = (delegate) => ({ baseOptions: { modelAssetPath: model, delegate }, runningMode: 'VIDEO', ...extra });
+      try {
+        return await Task.createFromOptions(fileset, options('GPU'));
+      } catch {
+        return await Task.createFromOptions(fileset, options('CPU'));
+      }
+    };
+    return await Promise.all([
+      create(FaceLandmarker, FACE_MODEL_URL, { numFaces: 1 }),
+      create(GestureRecognizer, GESTURE_MODEL_URL, { numHands: 1 }),
+    ]);
   } catch (err) {
     console.error(err);
-    throw new Error('Failed to load the face tracker. Check your internet connection and press Retry.');
+    throw new Error('Failed to load the face and hand trackers. Check your internet connection and press Retry.');
   }
 }
 
@@ -93,7 +102,11 @@ export function getBlinkState() {
   if (!landmarker || !stream) return true;
   if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
-    const face = landmarker.detectForVideo(video, performance.now()).faceLandmarks[0];
+    const now = performance.now();
+    const face = landmarker.detectForVideo(video, now).faceLandmarks[0];
+    // ponytail: both models run on every frame; recognize hands every other frame if the frame rate drops.
+    const hand = recognizer.recognizeForVideo(video, now).gestures[0]?.[0];
+    gesture = hand && hand.categoryName !== 'None' && hand.score >= GESTURE_SCORE ? hand.categoryName : null;
     ear = face ? (eyeAspectRatio(face, LEFT_EYE) + eyeAspectRatio(face, RIGHT_EYE)) / 2 : null;
     // The camera image is unmirrored: turning toward the screen's left swings the nose to the image's right.
     if (face) turn = (face[1].x - (face[234].x + face[454].x) / 2) / Math.abs(face[454].x - face[234].x);
@@ -102,6 +115,7 @@ export function getBlinkState() {
 }
 
 export const getEAR = () => ear;
+export const getGesture = () => gesture;
 export const getTurn = () => (ear === null ? 0 : turn);
 
 // -1 head turned toward the screen's left, 1 toward its right, 0 facing it. Call after getBlinkState().

@@ -13,9 +13,18 @@ const SNAP_MAX = 7;
 const LURCH_MIN = 8; // z units it covers during a blackout
 const LURCH_MAX = 13;
 const PEEK_DOOR_Z = { [-1]: 14, [1]: 32 }; // nearest door on each side (see buildHallway)
+const EXIT_Z = 3; // the way out: right wall, right beside you
+// Each room is the same hallway washed a different colour, and it moves further per snap.
+const ROOM_TINT = [null, 'rgba(160,40,20,0.55)', 'rgba(40,70,170,0.55)'];
+const ROOM_PACE = 0.2; // extra snap distance per room
 
 const TAU = Math.PI * 2;
 const rand = (a, b) => a + Math.random() * (b - a);
+const trace = (c, pts) => {
+  c.beginPath();
+  pts.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y)));
+};
+const doorAt = (X, z0) => [project(X, HALL.floor, z0), project(X, -6, z0), project(X, -6, z0 + 6), project(X, HALL.floor, z0 + 6)];
 
 let canvas, ctx, noise;
 let W = 0, H = 0, cx = 0, cy = 0, U = 1; // U = pixels per world unit at z = 0
@@ -35,6 +44,8 @@ let snapTimer = SNAP_INTERVAL;
 let dip = 0; // remaining seconds of a light-flicker dip
 let jumpT = 0; // seconds into the jump scare
 let wasDark = false;
+let room = 0; // 0-based
+let fade = 0; // 1 = black, eases out after walking into a new room
 
 const scaleAt = (z) => FOCAL / (FOCAL + z);
 const project = (X, Y, z) => {
@@ -60,34 +71,47 @@ function resize() {
   buildHallway();
 }
 
-export function resetEnemy() {
+// n: 1-based room number. Puts the enemy back at the far end of a freshly tinted hallway.
+export function setRoom(n) {
+  room = n - 1;
   enemy.z = START_Z;
   enemy.pose = newPose();
   snapTimer = SNAP_INTERVAL;
   jumpT = 0;
+  fade = n > 1 ? 1 : 0;
+  buildHallway();
 }
 
 // dark: lights are out. warning: lights about to die. strain: 0..1 eye strain.
 // peek: -1/1 side door something is leaning out of. emerge: 0..1 how far out it is.
-export function render(isBlinking, deltaTime, { dark = false, warning = false, strain = 0, peek = 0, emerge = 0 } = {}) {
+// lit: lighter held up. exit: the exit is unlocked. push: 0..1 how far it's been shoved open.
+export function render(isBlinking, deltaTime, opts = {}) {
+  const { dark = false, warning = false, strain = 0, peek = 0, emerge = 0, lit = false, exit = false, push = 0 } = opts;
   updateEnemy(isBlinking, deltaTime);
   if (wasDark && !dark) dip = 0.25; // tubes stutter back on
   wasDark = dark;
-  const light = flicker(deltaTime, warning);
+  const light = dark ? 0.75 : flicker(deltaTime, warning); // in a blackout only the lighter lights anything
   if (enemy.z <= 0) {
     drawJumpscare(deltaTime);
-  } else if (dark) {
+  } else if (dark && !lit) {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
     drawEyesInDark();
+    if (exit) drawExit(push, 1);
   } else {
     ctx.drawImage(bg, 0, 0);
+    if (exit) drawExit(push, light);
     if (peek) drawPeek(peek, emerge, light);
     drawEnemy(light);
   }
+  if (lit && enemy.z > 0) drawLighter(dark);
   drawVignette(light);
   drawStrain(strain);
   drawNoise();
+  if ((fade -= deltaTime) > 0) {
+    ctx.fillStyle = `rgba(0,0,0,${fade})`;
+    ctx.fillRect(0, 0, W, H);
+  }
 }
 
 // Blackout move: one big unseen step, revealed when the lights return.
@@ -105,7 +129,7 @@ function updateEnemy(isBlinking, dt) {
   snapTimer += dt;
   while (snapTimer >= SNAP_INTERVAL && enemy.z > 0) {
     snapTimer -= SNAP_INTERVAL;
-    enemy.z = Math.max(0, enemy.z - rand(SNAP_MIN, SNAP_MAX));
+    enemy.z = Math.max(0, enemy.z - rand(SNAP_MIN, SNAP_MAX) * (1 + ROOM_PACE * room));
     enemy.pose = newPose();
     dip = 0.15; // lights stutter as your eyes reopen
   }
@@ -126,8 +150,7 @@ function buildHallway() {
   const { w, floor, ceil, depth } = HALL;
 
   const path = (pts, close = true) => {
-    g.beginPath();
-    pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+    trace(g, pts);
     if (close) g.closePath();
   };
   const fill = (pts, style) => {
@@ -185,9 +208,8 @@ function buildHallway() {
   }
 
   // Side doors.
-  for (const [side, z0] of [[-1, 14], [1, 32], [-1, 60], [1, 95], [-1, 140], [1, 190]]) {
-    const X = side * w;
-    const door = [project(X, floor, z0), project(X, -6, z0), project(X, -6, z0 + 6), project(X, floor, z0 + 6)];
+  for (const [side, z0] of [[1, EXIT_Z], [-1, 14], [1, 32], [-1, 60], [1, 95], [-1, 140], [1, 190]]) {
+    const door = doorAt(side * w, z0);
     fill(door, '#040504');
     stroke(door, 'rgba(90,100,80,0.2)', Math.max(1, 4 * scaleAt(z0)), true);
   }
@@ -245,6 +267,11 @@ function buildHallway() {
   g.globalCompositeOperation = 'lighter';
   g.fillStyle = spill;
   g.fillRect(0, 0, W, H);
+  if (ROOM_TINT[room]) {
+    g.globalCompositeOperation = 'color';
+    g.fillStyle = ROOM_TINT[room];
+    g.fillRect(0, 0, W, H);
+  }
   g.globalCompositeOperation = 'source-over';
 }
 
@@ -431,13 +458,10 @@ function drawHead(mouth, lit) {
 // Something leaning out of a side door: fingers hooked round the frame, head tipped sideways.
 function drawPeek(side, emerge, light) {
   const X = side * HALL.w, z0 = PEEK_DOOR_Z[side];
-  const line = (pts) => {
-    ctx.beginPath();
-    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-  };
+  const line = (pts) => trace(ctx, pts);
 
   // The door has swung open onto blackness.
-  line([project(X, HALL.floor, z0), project(X, -6, z0), project(X, -6, z0 + 6), project(X, HALL.floor, z0 + 6)]);
+  line(doorAt(X, z0));
   ctx.fillStyle = '#000';
   ctx.fill();
 
@@ -462,6 +486,54 @@ function drawPeek(side, emerge, light) {
     line([project(X, Y, z0 + 0.4), project(X, Y + 0.05, z0 - reach), project(X - side * 0.25, Y + 0.25, z0 - reach - 0.2)]);
     ctx.stroke();
   }
+  ctx.restore();
+}
+
+// Unlocked exit: green sign (battery-backed, so it glows in a blackout too), light through the crack as you push.
+function drawExit(push, light) {
+  const door = doorAt(HALL.w, EXIT_Z);
+  const s = scaleAt(EXIT_Z + 7);
+  ctx.save();
+  trace(ctx, door);
+  ctx.closePath();
+  ctx.fillStyle = `rgba(200,255,200,${0.7 * push})`;
+  ctx.fill();
+  ctx.shadowColor = '#5f8';
+  ctx.shadowBlur = 24;
+  ctx.strokeStyle = `rgba(110,255,140,${0.35 + 0.4 * light})`;
+  ctx.lineWidth = Math.max(2, 0.25 * s * U);
+  ctx.stroke();
+  const [sx, sy] = project(HALL.w - 0.5, -6.8, EXIT_Z + 7); // past the door, where it stays on screen
+  ctx.font = `${Math.round(1.2 * s * U)}px VT323, monospace`;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = `rgba(140,255,160,${0.6 + 0.4 * light})`;
+  ctx.fillText('EXIT', sx, sy);
+  ctx.restore();
+}
+
+// Lighter held up in the bottom corner: warm flame, and in a blackout the only light there is.
+function drawLighter(dark) {
+  const m = Math.min(W, H);
+  const fx = W * 0.72, fy = H * 0.86;
+  const flick = rand(0.9, 1.1);
+  if (dark) {
+    const hole = ctx.createRadialGradient(fx, fy, m * 0.05, fx, fy, m * 0.9 * flick);
+    hole.addColorStop(0, 'rgba(0,0,0,0)');
+    hole.addColorStop(1, 'rgba(0,0,0,0.92)');
+    ctx.fillStyle = hole;
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const glow = ctx.createRadialGradient(fx, fy, 0, fx, fy, m * 0.5 * flick);
+  glow.addColorStop(0, 'rgba(255,150,50,0.35)');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(255,200,110,0.9)';
+  ctx.beginPath();
+  ctx.ellipse(fx, fy - m * 0.02, m * 0.008, m * 0.022 * flick, rand(-0.1, 0.1), 0, TAU);
+  ctx.fill();
   ctx.restore();
 }
 

@@ -208,3 +208,15 @@ function distortionCurve(k) {
   }
   return curve;
 }
+
+// ---------- player actions ----------
+
+// Lighter wheel strike.
+export function flick() {
+  if (ac) noiseHit(0, 'highpass', 4000, 0.4, 0.07);
+}
+
+// Exit latch clicks open on the right.
+export function clunk() {
+  if (ac) noiseHit(1, 'lowpass', 500, 0.8, 0.25);
+}

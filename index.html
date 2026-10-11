@@ -16,22 +16,26 @@
     <div class="crt" aria-hidden="true"></div>
 
     <div id="hud" class="screen">
-      <div><span class="rec">● REC</span> <span id="hud-timer">1:00</span></div>
+      <div><span class="rec">● REC</span> <span id="hud-room">ROOM 1/3</span> <span id="hud-timer">0:20</span></div>
       <div class="hud-right">
         <div id="hud-eyes">EYES OPEN</div>
-        <div class="strain">STRAIN <span class="strain-bar"><span id="hud-strain"></span></span></div>
+        <div class="meter">STRAIN <span class="meter-bar"><span id="hud-strain"></span></span></div>
+        <div class="meter">LIGHTER <span class="meter-bar"><span id="hud-fuel"></span></span></div>
         <div id="hud-ear">EAR --</div>
       </div>
     </div>
 
     <section id="menu" class="screen overlay">
       <h1>Blink of the Abyss</h1>
-      <p>It only moves when you can't see it. Survive 60 seconds.</p>
+      <p>It only moves when you can't see it. Get through three rooms.</p>
       <ul class="rules">
         <li>Blink and it closes in.</li>
         <li>Never blink and your eyes burn shut.</li>
         <li>When the lights die it moves anyway, so blink in the dark.<br />Open your eyes when the hum returns.</li>
         <li>When a side door creaks, turn your head and face what's there.<br />Be quick: it moves while you look away.</li>
+        <li>☝ Point a finger up to strike your lighter. Lit before the lights die, it can't move in the dark.<br />Fuel is short.</li>
+        <li>When the EXIT sign lights up, hold up an open palm ✋ to push through to the next room.</li>
+        <li>Keep your hand beside your face, never in front of it.</li>
       </ul>
       <button id="start-btn" data-action="start">Open your eyes</button>
       <p id="status" role="status" aria-live="polite"></p>
@@ -40,13 +44,13 @@
 
     <section id="gameover" class="screen overlay">
       <h1>You blinked.</h1>
-      <p>You lasted <span id="survived">0.0</span> seconds.</p>
+      <p>You lasted <span id="survived">0.0</span> seconds and reached room <span id="reached">1</span>.</p>
       <button data-action="start">Try again</button>
     </section>
 
     <section id="victory" class="screen overlay">
       <h1>You survived.</h1>
-      <p>The lights hum back to life. It is still out there.</p>
+      <p>Three rooms behind you. The door locks. It is still out there.</p>
       <button data-action="start">Go back in</button>
     </section>
 
